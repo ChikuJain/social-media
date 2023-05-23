@@ -70,7 +70,7 @@ let createUser = async function (req, res) {
                 state: state,
                 country: country,
                 
-            }
+            },
             location:{
             coordinate: [coordnates.data[0].lon, coordnates.data[0].lat]
         }
@@ -393,8 +393,10 @@ let updateUser = async function (req, res) {
             let coordnates = await axios.get(`https://geocode.maps.co/search?city=${city}&state=${state}&country=${country}`)
             if (coordnates.length == 0) { return res.status(400).send({ status: false, message: "please provide valid city, state or country" }) }
             userData.address = address;
+            userData.location.coordinate[0] = coordnates.data[0].lon;
+            userData.location.coordinate[1] = coordnates.data[0].lat;
+            
         }
-        console.log("hello")
         let finaldata = await userData.save()
         res.status(200).send({status:true,message:"user updated",data:finaldata})
     }

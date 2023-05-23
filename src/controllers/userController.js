@@ -72,7 +72,7 @@ let createUser = async function (req, res) {
                 
             },
             location:{
-            coordinate: [coordnates.data[0].lon, coordnates.data[0].lat]
+            coordinates: [coordnates.data[0].lon, coordnates.data[0].lat]
         }
         }
 

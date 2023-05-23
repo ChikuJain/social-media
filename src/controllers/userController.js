@@ -69,8 +69,11 @@ let createUser = async function (req, res) {
                 city: city,
                 state: state,
                 country: country,
-                coordinate: [coordnates.data[0].lon, coordnates.data[0].lat]
+                
             }
+            location:{
+            coordinate: [coordnates.data[0].lon, coordnates.data[0].lat]
+        }
         }
 
         let createdData = await userModel.create(obj)

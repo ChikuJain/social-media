@@ -13,8 +13,8 @@ const { validateString,
 let createUser = async function (req, res) {
     try {
         let data = req.body
-        console.log("hello")
         let { firstName, lastName, email, phone, password, cpassword, address, country, state, city } = data
+
         if (validateRequest(data)) { return res.status(400).send({ status: false, message: "please provide the data in the body" }) }
 
         if (!validateString(firstName)) { return res.status(400).send({ status: false, message: "please provide the name" }) }
@@ -30,7 +30,8 @@ let createUser = async function (req, res) {
         if (!regexPhoneNumber(phone)) { return res.status(400).send({ status: false, message: "please provide a valid phone number" }) }
 
         if (!validateString(password)) { return res.status(400).send({ status: false, message: "please provide the password" }) }
-        if (!validatePassword(password)) { return res.status(400).send({ status: false, message: "Please provide a valid password with atleast one uppercase one lowercase  one special character and must contain atleast 6 characters" }) }
+        if (password.length < 6) { return res.status(400).send({ status: false, message: "Password must contain atleast 6 characters" }) }
+        if (!validatePassword(password)) { return res.status(400).send({ status: false, message: "Please provide a valid password with atleast one uppercase, one lowercase and one special character." }) }
 
         if (!validateString(cpassword)) { return res.status(400).send({ status: false, message: "please provide the password" }) }
         if (cpassword !== password) { return res.status(400).send({ status: false, message: "password is not matching" }) }
@@ -45,11 +46,9 @@ let createUser = async function (req, res) {
 
         let coordnates = await axios.get(`https://geocode.maps.co/search?city=${city}&state=${state}&country=${country}`)
         if (coordnates.length == 0) { return res.status(400).send({ status: false, message: "please provide valid city, state or country" }) }
-        console.log(coordnates)
 
         const salt = await bcrypt.genSalt(10);
         const encryptedPassword = await bcrypt.hash(password, salt);
-        console.log(encryptedPassword)
         data.password = encryptedPassword
 
         let isDuplicateEmail = await userModel.findOne({ email: data.email })
@@ -62,18 +61,18 @@ let createUser = async function (req, res) {
             firstName: firstName,
             lastName: lastName,
             phone: phone,
-            email: email,
+            email: email.toLowerCase(),
             password: data.password,
             address: {
                 text: address,
                 city: city,
                 state: state,
                 country: country,
-                
+
             },
-            location:{
-            coordinates: [coordnates.data[0].lon, coordnates.data[0].lat]
-        }
+            location: {
+                coordinates: [coordnates.data[0].lon, coordnates.data[0].lat]
+            }
         }
 
         let createdData = await userModel.create(obj)
@@ -87,18 +86,19 @@ let createUser = async function (req, res) {
 
 let userLogin = async function (req, res) {
     try {
-        let email = req.body.email
+        let email = req.body.email.toLowerCase()
         let password = req.body.password
-        if (!validateString(email)) { return res.status(400).send({ status: false, message: "email is required" }) }
-        if (!validateEmail(email)) { return res.status(400).send({ status: false, message: "please provide a valid email" }) }
+
+        if (!validateString(email)) { return res.status(400).send({ status: false, message: "email or phone is required" }) }
+        if (!validateEmail(email) && !regexPhoneNumber(email)) { return res.status(400).send({ status: false, message: "please provide a valid email or phone" }) }
 
         if (!validateString(password)) { return res.status(400).send({ status: false, message: "password is required" }) }
 
-        let user = await userModel.findOne({ $or:[{email:email},{phone:email}] });
-        if (!user) return res.status(401).send({ status: false, message: "email or phone is not correct", });
+        let user = await userModel.findOne({ $or: [{ email: email }, { phone: email }] });
+        if (!user) return res.status(401).send({ status: false, message: "Invalid Crendentials", });
 
         const passwordDetails = await bcrypt.compare(password, user.password)
-        if (!passwordDetails) return res.status(401).send({ status: false, message: "password is incorrect, please provide correct password" })
+        if (!passwordDetails) return res.status(401).send({ status: false, message: "Invalid Credentials" })
 
         let token = jwt.sign(
             {
@@ -111,7 +111,7 @@ let userLogin = async function (req, res) {
         res.cookie("jwtoken", token, {
             expires: new Date(Date.now() + 600000),
         });
-  
+
 
         res.status(200).send({ userId: user._id, userName: user.fname, token: token });
     }
@@ -135,7 +135,7 @@ let userLogout = async function (req, res) {
 
 let getUserData = async function (req, res) {
     try {
-        res.status(200).send({status:true,message:"user data",data:req.userData})
+        res.status(200).send({ status: true, message: "user data", data: req.userData })
     }
     catch (err) {
         console.log(err)
@@ -152,7 +152,7 @@ let rejectRequest = async function (req, res) {
 
         let cond = false;
         for (let i = 0; i < userData.friendRequest.length; i++) {
-            if (userData.friendRequest[i]._id == id) {
+            if (userData.friendRequest[i].userId._id.toString() == id) {
                 userData.friendRequest.splice(i, 1)
                 cond = true
                 break;
@@ -161,8 +161,12 @@ let rejectRequest = async function (req, res) {
 
         if (!cond) return res.status(400).send({ status: false, message: "something went wrong" })
 
-        let finaldata = await userData.save();
-        res.status(200).send({status:true,message:"request rejected",data:finaldata});
+        let finalData = await userData.save();
+
+        let finalData2 = await finalData.populate(['friends.userId', 'friendRequest.userId'])
+        
+
+        res.status(200).send({ status: true, message: "request rejected", data: finalData2 });
 
     } catch (err) {
         console.log(err)
@@ -176,35 +180,33 @@ let acceptRequest = async function (req, res) {
     try {
         let userData = req.userData;
         let id = req.params.id;
-        console.log(id)
 
         let acceptedFriend;
         let cond = false;
 
         for (let i = 0; i < userData.friendRequest.length; i++) {
             if (userData.friendRequest[i].userId._id.toString() == id) {
-                console.log("from loop")
                 acceptedFriend = userData.friendRequest.splice(i, 1)
                 cond = true
                 break;
             };
         };
-     
+
         if (!cond) return res.status(400).send({ status: false, message: "something went wrong" });
-        console.log("hello")
 
         userData.friends.push({ userId: acceptedFriend[0].userId._id });
 
-        let finaldata = await userData.save();
+        let finalData = await userData.save();
+        let finalData2 = await finalData.populate(['friends.userId', 'friendRequest.userId'])
 
         let senderDoc = await userModel.findById(id)
         if (!senderDoc) return res.status(400).send({ status: false, message: "something went wrong" });
 
-        senderDoc.friends.push({ userId: userData._id })
+        senderDoc.friends.push({ userId: userData._id });
 
-        let dta = await senderDoc.save()
+        await senderDoc.save();
 
-        res.status(200).send({status:true,message:"request accepted",data:finaldata});
+         res.status(200).send({ status: true, message: "request accepted", data: finalData2 });
 
     } catch (err) {
         console.log(err)
@@ -218,7 +220,7 @@ let sendRequest = async function (req, res) {
     try {
         let userData = req.userData;
         let id = req.params.id;
-        console.log(id, "hello")
+
         let findDoc = await userModel.findById(id)
         if (!findDoc) return res.status(400).send({ status: false, message: "something went wrong" });
 
@@ -255,32 +257,14 @@ let searchFiends = async function (req, res) {
                 $geoNear: {
                     near: { type: "Point", coordinates: [longitude, latitude] },
                     key: "location",
-                    maxDistance: parseFloat(maxDist) * 1609,
+                    maxDistance: parseFloat(maxDist) * 1000,
                     distanceField: "dist.calculated",
                     sherical: true
                 }
             }
         ])
 
-        console.log(data)
-        res.status(200).send({status:true,message:"data collected",data:data})
-    } catch (err) {
-        console.log(err)
-        res.status(500).send({ status: false, message: err.message })
-    }
-}
-
-
-
-let viewProfile = async function (req, res) {
-    try {
-        let id = req.body._id
-
-        let profile = await userModel.findById(id)
-        if (!profile) return res.status(400).send({ status: false, message: "something went wrong" });
-
-        res.status(200).send({ profile });
-
+        res.status(200).send({ status: true, message: "data collected", data: data })
     } catch (err) {
         console.log(err)
         res.status(500).send({ status: false, message: err.message })
@@ -293,15 +277,15 @@ let forgotPasswordOtp = async function (req, res) {
     try {
         const { cred } = req.body
 
-        let userData = await userModel.findOne({$or:[{email:cred},{phone:cred}]})
-        if(!userData) return res.status(400).send({ status: false, message: "Invalid Credentials" })
+        let userData = await userModel.findOne({ $or: [{ email: cred }, { phone: cred }] })
+        if (!userData) return res.status(400).send({ status: false, message: "Invalid Credentials" })
 
         generateOtp = function (size) {
             const zeros = '0'.repeat(size - 1);
             const x = parseFloat('1' + zeros);
             const y = parseFloat('9' + zeros);
             const confirmationCode = String(Math.floor(x + Math.random() * y));
-         return confirmationCode;
+            return confirmationCode;
         }
 
         let otp = generateOtp(4)
@@ -310,23 +294,23 @@ let forgotPasswordOtp = async function (req, res) {
             service: "gmail",
             auth: {
                 user: "chiku.jain.120120@gmail.com",
-                pass: process.env.CRED
+                pass: "jdtnwbgcvpffegwm"
             }
         });
 
         const mailOptions = {
-            from:"chiku.jain.120120@gmail.com",
-            to:userData.email,
-            subject:"Otp Verification Code",
-            html:`<h1>This is the verification code for your password reset ${otp}</h1>`
+            from: "chiku.jain.120120@gmail.com",
+            to: userData.email,
+            subject: "Otp Verification Code",
+            html: `<h1>This is the verification code for your password reset ${otp}. This Otp will expired in 3 minutes</h1>`
         }
 
-        transporter.sendMail(mailOptions,async(error,info)=>{
-            if(error){
-                console.log("Error",error) ;
-                res.status(500).send({status:true,message:"Something went wrong"});
-            }else{
-                console.log("Email sent"+ info.response);
+        transporter.sendMail(mailOptions, async (error, info) => {
+            if (error) {
+                console.log("Error", error);
+                res.status(500).send({ status: true, message: "Something went wrong" });
+            } else {
+                console.log("Email sent" + info.response);
                 userData.otp = otp;
                 let sav = await userData.save()
 
@@ -337,11 +321,11 @@ let forgotPasswordOtp = async function (req, res) {
                     },
                     "Shanti-Infotech-Assignment",
                 );
-        
+
                 res.cookie("resetToken", token, {
-                    expires: new Date(Date.now() + 360000),
+                    expires: new Date(Date.now() + 180000),
                 });
-                res.status(200).send({status:true,message:"Otp send successfully"});
+                res.status(200).send({ status: true, message: "Otp send successfully" });
             }
         })
 
@@ -375,7 +359,6 @@ let updateUser = async function (req, res) {
             if (!validateString(email)) { return res.status(400).send({ status: false, message: "please provide email" }) }
             if (!validateEmail(email)) { return res.status(400).send({ status: false, message: "provide valid email" }) }
             let uniqueEmail = await userModel.find({ $and: [{ _id: { $ne: userData._id } }, { email: email }] })
-            console.log(uniqueEmail)
             if (uniqueEmail.length) { return res.status(400).send({ status: false, message: "This email is already registered" }) }
             userData.email = email
         }
@@ -393,12 +376,13 @@ let updateUser = async function (req, res) {
             let coordnates = await axios.get(`https://geocode.maps.co/search?city=${city}&state=${state}&country=${country}`)
             if (coordnates.length == 0) { return res.status(400).send({ status: false, message: "please provide valid city, state or country" }) }
             userData.address = address;
-            userData.location.coordinate[0] = coordnates.data[0].lon;
-            userData.location.coordinate[1] = coordnates.data[0].lat;
-            
+            userData.location.coordinates[0] = coordnates.data[0].lon;
+            userData.location.coordinates[1] = coordnates.data[0].lat;
+
         }
-        let finaldata = await userData.save()
-        res.status(200).send({status:true,message:"user updated",data:finaldata})
+        let finalData = await userData.save()
+        let finalData2 = await finalData.populate(['friends.userId', 'friendRequest.userId'])
+        res.status(200).send({ status: true, message: "user updated", data: finalData2 })
     }
     catch (err) {
         console.log(err)
@@ -419,7 +403,8 @@ let deleteFriend = async function (req, res) {
             }
         }
 
-        let res = await userData.save()
+        let finalData = await userData.save();
+        let finalData2 = await finalData.populate(['friends.userId', 'friendRequest.userId'])
 
         let frnd = await userModel.findById(id)
         if (!frnd) return res.status(400).send({ status: false, message: "something went wrong" });
@@ -433,7 +418,7 @@ let deleteFriend = async function (req, res) {
 
         let fRes = await frnd.save();
 
-        res.status(200).send({status:true,message:"deleted",data:res});
+        res.status(200).send({ status: true, message: "deleted", data: finalData2 });
 
     } catch (err) {
         console.log(err)
@@ -442,19 +427,18 @@ let deleteFriend = async function (req, res) {
 }
 
 
-let checkOtp = async function(req,res){
-    try{
+let checkOtp = async function (req, res) {
+    try {
 
-        let {otp} = req.body
-        
+        let { otp } = req.body
+
         let token = req.cookies.resetToken;
-        console.log(req.cookies)
-        if (!token) return res.status(403).send({ status: false, message: "please try again" });
+        if (!token) return res.status(403).send({ status: false, message: "Otp is Expired" });
 
         let verifyToken;
 
         try {
-             verifyToken = jwt.verify(token, "Shanti-Infotech-Assignment");
+            verifyToken = jwt.verify(token, "Shanti-Infotech-Assignment");
         } catch (error) {
             return res.status(401).send({ status: false, message: error.message });
         }
@@ -462,11 +446,11 @@ let checkOtp = async function(req,res){
         let user = await userModel.findOne({ _id: verifyToken._id });
         if (!user) return res.status(400).send({ status: false, message: "user not found" });
 
-        if(otp!=user.otp)return res.status(400).send({ status: false, message: "wrong Otp" });
+        if (otp != user.otp) return res.status(400).send({ status: false, message: "wrong Otp" });
 
         let token2 = jwt.sign(
             {
-                otp:otp,
+                otp: otp,
                 _id: user._id.toString(),
                 iat: new Date().getTime(),
             },
@@ -478,19 +462,19 @@ let checkOtp = async function(req,res){
         });
 
 
-        res.status(200).send({status:true,message:"otp matched"})
+        res.status(200).send({ status: true, message: "otp matched" })
 
-    }catch(err){
+    } catch (err) {
         console.log(err)
         res.status(500).send({ status: false, message: err.message })
     }
 }
 
 
-let updatePassword = async function(req,res){
-    try{
+let updatePassword = async function (req, res) {
+    try {
 
-        let {password,cpassword} = req.body;
+        let { password, cpassword } = req.body;
 
         let token = req.cookies.resetToken;
         if (!token) return res.status(403).send({ status: false, message: "please try again" });
@@ -498,7 +482,7 @@ let updatePassword = async function(req,res){
         let verifyToken;
 
         try {
-             verifyToken = jwt.verify(token, "Shanti-Infotech-Assignment");
+            verifyToken = jwt.verify(token, "Shanti-Infotech-Assignment");
         } catch (error) {
             return res.status(401).send({ status: false, message: error.message });
         }
@@ -506,47 +490,58 @@ let updatePassword = async function(req,res){
         let user = await userModel.findOne({ _id: verifyToken._id });
         if (!user) return res.status(400).send({ status: false, message: "user not found" });
 
-        if(verifyToken.otp!=user.otp)return res.status(400).send({ status: false, message: "Something went wrong" });
+        if (verifyToken.otp != user.otp) return res.status(400).send({ status: false, message: "Something went wrong" });
 
         if (!validateString(password)) { return res.status(400).send({ status: false, message: "please provide the password" }) }
         if (!validatePassword(password)) { return res.status(400).send({ status: false, message: "Please provide a valid password with atleast one uppercase one lowercase  one special character and must contain atleast 6 characters" }) }
         if (!validateString(cpassword)) { return res.status(400).send({ status: false, message: "please provide the password" }) }
-        if(cpassword!=password)return res.status(400).send({ status: false, message: "password is not matching" })
+        if (cpassword != password) return res.status(400).send({ status: false, message: "password is not matching" })
 
         const salt = await bcrypt.genSalt(10);
         const encryptedPassword = await bcrypt.hash(password, salt);
-        console.log(encryptedPassword)
         user.password = encryptedPassword
         user.otp = ""
         let finl = await user.save()
         res.clearCookie("jwtoken", { path: "/" });
-        res.status(200).send({status:true,message:"password change successfully"})
+        res.status(200).send({ status: true, message: "password change successfully" })
 
+    } catch (err) {
+        console.log(err)
+        res.status(500).send({ status: false, message: err.message })
+    }
+}
+
+let getFriendsProfile = async function (req, res) {
+    try {
+        let id = req.params.id;
+
+        let data = await userModel.findOne({ _id: id })
+        if (!data) return res.status(400).send({ status: false, message: "Something went wrong" })
+
+        res.status(200).send({ status: true, message: "friend profile", data: data })
+
+    } catch (err) {
+        console.log(err)
+        res.status(500).send({ status: false, message: err.message })
+    }
+}
+
+
+const checkToken = async function(req,res){
+    try{
+        let tokn = req.cookies.jwtoken;
+        if (tokn) {
+            return res.status(100).send({ status: true, message: "token is available" })
+        }
+        res.status(204).send({ status: false, message: "token is not available" })
     }catch(err){
         console.log(err)
         res.status(500).send({ status: false, message: err.message })
     }
 }
 
-let getFriendsProfile = async function (req,res){
-    try{
-        let id = req.params.id;
-        console.log(id)
-
-        let data = await userModel.findOne({_id:id})
-        if(!data)return res.status(400).send({ status: false, message: "Something went wrong" })
-
-        res.status(200).send({status:true,message:"friend profile",data:data})
-
-    }catch(err){
-        console.log(err)
-    res.status(500).send({ status: false, message: err.message })
-    }
-}
-
-
 module.exports = {
-    createUser, userLogin, userLogout, getUserData,getFriendsProfile,
-    rejectRequest, searchFiends, acceptRequest, checkOtp,updatePassword,
-    viewProfile, forgotPasswordOtp, sendRequest, updateUser, deleteFriend
+    createUser, userLogin, userLogout, getUserData, getFriendsProfile,
+    rejectRequest, searchFiends, acceptRequest, checkOtp, updatePassword,
+ forgotPasswordOtp, sendRequest, updateUser, deleteFriend,checkToken
 }

@@ -11,7 +11,7 @@ app.use(cookieParser());
 app.use(express.static("build"))
 
 
-mongoose.connect(process.env.DB, {
+mongoose.connect("mongodb+srv://prayag:prayag123@cluster0.0np0qlj.mongodb.net/ShantiAssignment?retryWrites=true&w=majority", {
     useNewUrlParser: true
 })
 .then( () => console.log("MongoDb is connected"))

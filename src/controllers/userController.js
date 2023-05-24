@@ -294,7 +294,7 @@ let forgotPasswordOtp = async function (req, res) {
             service: "gmail",
             auth: {
                 user: "chiku.jain.120120@gmail.com",
-                pass: "jdtnwbgcvpffegwm"
+                pass: process.env.CRED
             }
         });
 
